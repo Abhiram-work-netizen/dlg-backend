@@ -207,41 +207,84 @@ function runLocalHeuristics(url) {
   const warnings = [];
   let score = 0;
 
-  // Typosquatting detection
-  const brands = ['google', 'facebook', 'amazon', 'apple', 'microsoft', 'paypal', 'netflix', 'instagram', 'whatsapp', 'twitter'];
   const domain = url.toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
 
-  for (const brand of brands) {
-    if (domain.includes(brand) && !domain.endsWith(`${brand}.com`) && !domain.endsWith(`${brand}.co`)) {
+  // ── Typosquatting with leetspeak & misspelling variants ──
+  const brandVariants = {
+    'amazon':    ['amaz0n', 'amazom', 'amazn', 'amaazon', 'amazon1', 'amazonn', 'amaz0', 'amazo', 'arnazon'],
+    'google':    ['g00gle', 'googl', 'gooogle', 'googie', 'gogle', 'g0ogle', 'goog1e'],
+    'facebook':  ['faceb00k', 'facebok', 'facbook', 'faceebook', 'faceboook', 'faceb0ok'],
+    'apple':     ['app1e', 'appie', 'aple', 'applle', 'appl3'],
+    'microsoft': ['micr0soft', 'mircosoft', 'microsft', 'microsooft', 'micros0ft'],
+    'paypal':    ['paypa1', 'paypall', 'paypai', 'paypl', 'paypa!'],
+    'netflix':   ['netf1ix', 'netfilx', 'nettflix', 'netflixx', 'netfl1x'],
+    'instagram': ['1nstagram', 'instagran', 'insatgram', 'instagarm', 'lnstagram'],
+    'whatsapp':  ['whatsap', 'watsapp', 'whatsappp', 'whatssapp', 'vvhatsapp'],
+    'twitter':   ['twiter', 'tw1tter', 'twiiter', 'twítter'],
+    'linkedin':  ['linkedn', 'l1nkedin', 'linkdin', 'linkedinn'],
+    'bank':      ['bannk', 'baank', 'b4nk', 'banlk'],
+  };
+
+  // Check exact brand name in non-official domain
+  const officialBrands = ['google', 'facebook', 'amazon', 'apple', 'microsoft', 'paypal', 'netflix', 'instagram', 'whatsapp', 'twitter'];
+  for (const brand of officialBrands) {
+    if (domain.includes(brand) && !domain.endsWith(`${brand}.com`) && !domain.endsWith(`${brand}.co`) && !domain.endsWith(`${brand}.in`)) {
       warnings.push(`Possible typosquatting of ${brand}`);
       score += 40;
     }
   }
 
+  // Check leetspeak / misspelling variants
+  for (const [brand, variants] of Object.entries(brandVariants)) {
+    for (const variant of variants) {
+      if (domain.includes(variant)) {
+        warnings.push(`Possible typosquatting: "${variant}" looks like "${brand}" but is misspelled`);
+        score += 50;
+      }
+    }
+  }
+
   // Suspicious TLDs
-  const suspiciousTlds = ['.xyz', '.top', '.club', '.buzz', '.click', '.link', '.tk', '.ml', '.ga', '.cf'];
+  const suspiciousTlds = ['.xyz', '.top', '.club', '.buzz', '.click', '.link', '.tk', '.ml', '.ga', '.cf', '.gq', '.pw', '.cc', '.icu', '.cam', '.bid', '.win', '.loan', '.work'];
   if (suspiciousTlds.some(tld => domain.endsWith(tld))) {
     warnings.push('Suspicious top-level domain');
     score += 25;
   }
 
   // URL shorteners
-  const shorteners = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly', 'is.gd', 'buff.ly'];
+  const shorteners = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly', 'is.gd', 'buff.ly', 'cutt.ly', 'short.io', 'rebrand.ly'];
   if (shorteners.some(s => domain.includes(s))) {
-    warnings.push('URL shortener detected');
+    warnings.push('URL shortener detected — actual destination is hidden');
     score += 15;
   }
 
   // Excessive subdomains
   if (domain.split('.').length > 4) {
-    warnings.push('Excessive subdomains detected');
+    warnings.push('Excessive subdomains detected — a common phishing technique');
     score += 20;
   }
 
   // IP address URL
   if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)) {
-    warnings.push('Direct IP address in URL');
+    warnings.push('Direct IP address in URL — legitimate sites use domain names');
     score += 30;
+  }
+
+  // @ symbol in URL (credential injection)
+  if (url.includes('@')) {
+    warnings.push('Contains "@" — may be attempting URL credential injection');
+    score += 35;
+  }
+
+  // Suspicious path keywords
+  const pathPart = url.toLowerCase().replace(/^https?:\/\/[^/]+/, '');
+  const suspiciousKeywords = ['login', 'signin', 'verify', 'confirm', 'account', 'secure', 'update', 'banking', 'password', 'credential', 'claim', 'reward', 'prize', 'winner'];
+  for (const keyword of suspiciousKeywords) {
+    if (pathPart.includes(keyword) || domain.includes(keyword)) {
+      warnings.push(`Contains suspicious keyword "${keyword}"`);
+      score += 20;
+      break;
+    }
   }
 
   return {
